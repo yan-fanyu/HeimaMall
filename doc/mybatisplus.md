@@ -249,4 +249,169 @@ void testQueryById(){
 
 ### 案例分析
 ![img_9.png](img_9.png)
+实现增删改查
+```java
+package com.itheima.mp.controller;
+
+import cn.hutool.core.bean.BeanUtil;
+import com.itheima.mp.domain.dto.UserFormDTO;
+import com.itheima.mp.domain.po.User;
+import com.itheima.mp.domain.vo.UserVO;
+import com.itheima.mp.service.IUserService;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.models.auth.In;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@Api("用户管理接口")
+@RequestMapping("/user")
+@RestController
+@RequiredArgsConstructor
+public class UserController {
+    // 推荐使用构造函数注入，不推荐使用 @Autowired
+    // lombok 中 @RequiredArgsConstructor 可以帮助我们创建构造函数
+    private final IUserService userService;
+
+    @ApiOperation("新增用户接口")
+    @PostMapping
+    public void saveUser(@RequestBody UserFormDTO userDTO){
+        // 1 把 DTO 对象拷贝到 PO
+        User user = BeanUtil.copyProperties(userDTO, User.class);
+        // 2 执行新增操作
+        userService.save(user);
+    }
+
+    @ApiOperation("删除用户接口")
+    @DeleteMapping("{id}")
+    public void deleteUserById(@ApiParam("用户id") @PathVariable("id") Long id){
+        userService.removeById(id);
+    }
+
+    @ApiOperation("根据id查询用户接口")
+    @GetMapping("{id}")
+    public UserVO queryUserById(@ApiParam("用户id") @PathVariable("id") Long id){
+        // 1 查询用户 PO
+        User user = userService.getById(id);
+        // 2 把 PO 拷贝到 VO
+        return BeanUtil.copyProperties(user, UserVO.class);
+    }
+
+    @ApiOperation("根据id批量查询用户接口")
+    @GetMapping
+    public List<UserVO> queryUserByIds(@ApiParam("用户id集合") @RequestParam("ids") List<Long> ids){
+        // 1 查询用户 PO
+        List<User> users = userService.listByIds(ids);
+        // 2 把 PO 拷贝到 VO
+        return BeanUtil.copyToList(users, UserVO.class);
+    }
+
+    @ApiOperation("扣减用户余额")
+    @GetMapping("/{id}/deduction/{money}")
+    public void deductBalance(
+            @ApiParam("用户id") @PathVariable("id") Long id,
+            @ApiParam("扣减的金额") @PathVariable("money") Integer money){
+        userService.deductBalance(id, money);
+    }
+}
+
+```
+
+### 使用 IService 中的 Lambda 查询
+案例分析
+![img_10.png](img_10.png)
+```java
+// Controller 层
+@ApiOperation("自定义复杂查询用户接口")
+@GetMapping("/list")
+public List<UserVO> queryUserByIds(UserQuery query){
+    // 1 查询用户 PO
+    List<User> users = userService.queryUsers(
+            query.getName(), query.getStatus(), query.getMaxBalance(), query.getMinBalance());
+    // 2 把 PO 拷贝到 VO
+    return BeanUtil.copyToList(users, UserVO.class);
+}
+```
+```java
+// Service 层
+@Override
+public List<User> queryUsers(String name, Integer status, Integer maxBalance, Integer minBalance) {
+    List<User> users = lambdaQuery()
+            .like(name != null, User::getUsername, name)
+            .eq(status != null, User::getStatus, status)
+            .ge(minBalance != null, User::getBalance, minBalance)
+            .le(maxBalance != null, User::getBalance, maxBalance)
+            .list();
+    return users;
+}
+```
+
+### 使用 IService 中的 Lambda 更新
+![img_11.png](img_11.png)
+不使用 IService 而是使用自定义的 Update 方法
+```java
+// Controller 层
+@ApiOperation("扣减用户余额")
+@GetMapping("/{id}/deduction/{money}")
+public void deductBalance(
+        @ApiParam("用户id") @PathVariable("id") Long id,
+        @ApiParam("扣减的金额") @PathVariable("money") Integer money){
+    userService.deductBalance(id, money);
+}
+```
+```java
+// Service 层 实现类
+@Override
+public void deductBalance(Long id, Integer money) {
+    // 1 查询用户
+    User user = getById(id);
+    // 2 校验用户状态
+    if(user == null || user.getStatus() == 2){
+        throw new RuntimeException("用户状态异常");
+    }
+    // 3 校验余额是否充足
+    if(user.getBalance() < money){
+        throw new RuntimeException("用户余额不足");
+    }
+    // 4 扣减余额
+    baseMapper.deductBalance(id, money);
+}
+```
+使用 Lambda 方法
+```java
+// Service 层 实现类
+@Override
+@Transactional
+public void deductBalance(Long id, Integer money) {
+    // 1 查询用户
+    User user = getById(id);
+    // 2 校验用户状态
+    if(user == null || user.getStatus() == 2){
+        throw new RuntimeException("用户状态异常");
+    }
+    // 3 校验余额是否充足
+    if(user.getBalance() < money){
+        throw new RuntimeException("用户余额不足");
+    }
+    // 4 扣减余额
+//        baseMapper.deductBalance(id, money);
+    int remainBalance = user.getBalance() - money;
+    boolean update = lambdaUpdate()
+            .set(User::getBalance, remainBalance)
+            .set(remainBalance == 0, User::getStatus, 2)
+            .eq(User::getId, id)
+            .eq(User::getBalance, user.getBalance())    // 乐观锁
+            .update();  // 加上 update() 才会执行
+}
+```
+
+### IService 批量新增
+案例分析
+![img_12.png](img_12.png)
+若要提升大数据量插入的性能，把 MySQl 数据库的 参数开启
+![img_13.png](img_13.png)
+
 
