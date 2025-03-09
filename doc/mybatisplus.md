@@ -415,3 +415,14 @@ public void deductBalance(Long id, Integer money) {
 ![img_13.png](img_13.png)
 
 
+# 三 MP扩展功能 Mybatis Plus
+## 代码生成
+常规操作
+![img_14.png](img_14.png)
+首先安装插件 
+![img_15.png](img_15.png)
+
+![img_16.png](img_16.png)
+![img_17.png](img_17.png)
+一键生成 厉害
+
